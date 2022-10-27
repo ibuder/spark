@@ -38,6 +38,29 @@ class QueryCompilationErrorsSuite
   with SharedSparkSession {
   import testImplicits._
 
+  // TODO add more detail to test name
+  test("MISSING_STATIC_PARTITION_COLUMN: ") {
+    val tableName: String = "t"
+
+    withTable(tableName) {
+      sql(
+        s"""
+           |CREATE TABLE $tableName (a INT, b INT)
+           |USING parquet
+           |PARTITIONED BY (a)
+           |""".stripMargin)
+
+
+      checkError(
+        exception = intercept[AnalysisException] {
+          sql(s"INSERT INTO TABLE $tableName PARTITION (b=1) SELECT a FROM $tableName")
+        },
+        errorClass = "FORBIDDEN_OPERATION",
+        parameters = Map("statement" -> "DESC PARTITION",
+          "objectType" -> "VIEW", "objectName" -> s"`$tableName`"))
+    }
+  }
+
   test("CANNOT_UP_CAST_DATATYPE: invalid upcast data type") {
     val e1 = intercept[AnalysisException] {
       sql("select 'value1' as a, 1L as b").as[StringIntClass]
