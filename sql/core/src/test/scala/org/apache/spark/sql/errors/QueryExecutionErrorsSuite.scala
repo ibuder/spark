@@ -26,7 +26,6 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{LocalFileSystem, Path}
 import org.apache.hadoop.fs.permission.FsPermission
 import org.mockito.Mockito.{mock, spy, when}
-
 import org.apache.spark._
 import org.apache.spark.sql.{AnalysisException, DataFrame, QueryTest, Row, SaveMode}
 import org.apache.spark.sql.catalyst.util.BadRecordException
@@ -42,7 +41,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy.EXCEPTION
 import org.apache.spark.sql.jdbc.{JdbcDialect, JdbcDialects}
 import org.apache.spark.sql.test.SharedSparkSession
-import org.apache.spark.sql.types.{DataType, DecimalType, LongType, MetadataBuilder, StructType}
+import org.apache.spark.sql.types.{DataType, DecimalType, LongType, MetadataBuilder, NullType, SQLUserDefinedType, StructField, StructType, UserDefinedType}
 import org.apache.spark.util.Utils
 
 class QueryExecutionErrorsSuite
@@ -64,6 +63,34 @@ class QueryExecutionErrorsSuite
         "fmt" -> "'BASE64'",
         "targetType" -> "\"BINARY\"",
         "suggestion" -> "`try_to_binary`"))
+  }
+
+  test("CANNOT_CAST_DATATYPE: from null to int") {
+    @SQLUserDefinedType(udt = classOf[NullUDT])
+    class NullData extends Serializable
+
+    class NullUDT extends UserDefinedType[NullData] {
+
+      override def sqlType: DataType = NullType
+
+      override def serialize(obj: NullData): Any =
+        throw new UnsupportedOperationException("Not implemented")
+
+      override def deserialize(datum: Any): NullData =
+        throw new UnsupportedOperationException("Not implemented")
+
+      override def userClass: Class[NullData] = classOf[NullData]
+
+      override def acceptsType(dataType: DataType): Boolean = false
+    }
+
+    case object NullUDT extends NullUDT
+
+    checkError(
+      exception = intercept[SparkRuntimeException] {
+        Seq(5).toDF("a").to(StructType(Seq(StructField("a", NullUDT)))).collect() },
+      errorClass = "FOO"
+    )
   }
 
   private def getAesInputs(): (DataFrame, DataFrame) = {
